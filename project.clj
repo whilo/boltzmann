@@ -10,6 +10,5 @@
                  ;; TODO move into dev profile again for release
                  [incanter "1.5.5"]
                  [criterium "0.4.3"]]
-  :profiles {:dev {:dependencies [[org.clojure/tools.nrepl "0.2.5"]]}}
   ;; deactivate tiered compilation to allow proper benchmarks with criterium
   :jvm-opts ^:replace [])
