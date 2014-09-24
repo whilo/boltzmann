@@ -1,6 +1,6 @@
 (ns boltzmann.restricted
   (:require [boltzmann.formulas :refer :all]
-            [clojure.core.matrix :refer [exp log dot add sub mul matrix transpose]]
+            [clojure.core.matrix :refer [exp log add sub mul matrix transpose]]
             [clojure.math.combinatorics :refer [cartesian-product]]
             ;; TODO replace if possible
             [incanter.stats :refer [sample-normal]]))
@@ -75,6 +75,7 @@
               (doall (map #(add %1 (mul %2 rate)) model up))))
           model
           data))
+
 
 (comment
   ;; require some more stuff for live coding, should not be in the library
