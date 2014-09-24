@@ -7,6 +7,9 @@
                  [net.mikera/core.matrix "0.29.1"]
                  [org.clojure/math.combinatorics "0.0.4"
                   :exclusions [org.clojure/clojure]]
+                 ;; for data loading, should go into separate dep for data
+                 [gloss "0.2.2"]
+                 [byte-streams "0.1.13"]
                  ;; TODO move into dev profile again for release
                  [incanter "1.5.5"]
                  [criterium "0.4.3"]]
