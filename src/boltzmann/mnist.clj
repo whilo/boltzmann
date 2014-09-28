@@ -39,13 +39,18 @@
                  (:images raw-images)))))
 
 
-(defn horizontal-tile [float-matrices] ;; TODO generalize to vertical
+(defn horizontal-tile [float-matrices]
   (->> float-matrices
        (apply interleave)
        (apply concat)
        (partition (* (count float-matrices)
                      (count (first float-matrices))))))
 
+(defn tile [width float-matrices]
+  (->> float-matrices
+       (partition width)
+       (map horizontal-tile)
+       (apply concat)))
 
 (defn view [image]
   (doto (javax.swing.JFrame. "MNIST Digit")
@@ -74,9 +79,9 @@
 (comment
   (def images (read-images "resources/train-images-idx3-ubyte"))
 
-  (def rendered (->> (take 30 images)
+  (def rendered (->> (take 100 images)
                      (map #(partition 28 %))
-                     horizontal-tile
+                     (tile 10)
                      render-grayscale-float-matrix))
 
   (view rendered)
