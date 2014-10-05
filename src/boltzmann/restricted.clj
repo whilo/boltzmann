@@ -1,10 +1,14 @@
 (ns boltzmann.restricted
   (:require [boltzmann.formulas :refer :all]
-            [clojure.core.matrix :refer [exp log add sub mul matrix transpose]]
+            [clojure.core.matrix :refer [exp log add sub mul matrix transpose columns] :as mat]
             [clojure.math.combinatorics :refer [cartesian-product]]
             ;; TODO replace if possible
             [incanter.stats :refer [sample-normal]]))
 
+;; avoid warnings for now in 1.7, but doesn't work
+;(set! clojure.core/*unchecked-math* true)
+
+(defrecord Layer [weights v-bias h-bias])
 
 (defn sample-binary [probabilities]
   (mapv (fn [p] (if (< (rand) p) 1 0)) probabilities))
@@ -18,27 +22,65 @@
           [(repeat (count bs) 0)] ;; init
           (range iterations)))
 
-(defn probs-h-given-v [weights v-bias h-bias v-state]
+(defn probs-h-given-v [{:keys [weights v-bias h-bias]} v-state]
   (mapv (fn [i] (boltz-cond-prob weights h-bias v-state i))
         (range (count h-bias))))
 
-(defn probs-v-given-h [weights v-bias h-bias h-state]
+(defn prepare-batch [states]
+  (mat/join-along 1 (repeat [1]) states))
+
+(defn probs-hs-given-vs [{:keys [weights h-bias]} v-states]
+  (boltz-cond-prob-batch (mat/join-along 1
+                                         (map vector h-bias)
+                                         weights)
+                         v-states))
+
+(defn probs-v-given-h [{:keys [weights v-bias h-bias]} h-state]
   (mapv (fn [i] (boltz-cond-prob (transpose weights) v-bias h-state i))
         (range (count v-bias))))
+
+(defn probs-vs-given-hs [{:keys [weights v-bias]} h-states]
+  (boltz-cond-prob-batch (mat/join-along 1
+                                         (map vector v-bias)
+                                         (transpose weights))
+                         h-states))
 
 (defn cd
   "Implements contrastive divergence with duration steps (CD-k),
   a duration (k) = 1 is often used and performs reasonably."
-  [weights v-bias h-bias v-data h-data duration]
+  [{:keys [weights v-bias h-bias] :as layer} v-data h-data duration]
   (let [v-count (count v-bias)
         h-count (count h-bias)
         init-chain [v-data h-data]]
     (reduce
      (fn [chain i]
-       (let [v-recon (probs-v-given-h weights v-bias h-bias (sample-binary (get chain (dec (count chain)))))]
+       (let [v-recon (probs-v-given-h layer (sample-binary (get chain (dec (count chain)))))]
          (-> chain
              (conj v-recon)
-             (conj (probs-h-given-v weights v-bias h-bias (sample-binary v-recon))))))
+             (conj (probs-h-given-v layer (sample-binary v-recon))))))
+     init-chain
+     (range duration))))
+
+(defn cd-batch
+  "Implements contrastive divergence with duration steps (CD-k),
+  a duration (k) = 1 is often used and performs reasonably."
+  [layer v-data h-data duration]
+  (let [v-count (count v-data)
+        h-count (count h-data)
+        init-chain [v-data h-data]]
+    (reduce
+     (fn [chain i]
+       (let [last (get chain (dec (count chain)))
+             v-recons (->> last
+                           (map sample-binary)
+                           prepare-batch
+                           (probs-vs-given-hs layer))]
+         (-> chain
+             (conj v-recons)
+             (conj (->> v-recons
+                        (map sample-binary)
+                        prepare-batch
+                        (probs-hs-given-vs layer) )))))
      init-chain
      (range duration))))
 
@@ -46,50 +88,120 @@
   "Calculate the total updates on the model (usually calculated through a cd chain,
   approximating <v-data,h-data> - <v-model,h-model>. "
   [v-model h-model v-data h-data]
-  [(mapv #(sub (mul v-data %1)
-               (mul v-model %2)) h-data h-model)
-   (sub v-data v-model)
-   (sub h-data h-model)])
+  (->Layer (matrix (mapv #(sub (mul v-data %1)
+                               (mul v-model %2)) h-data h-model))
+           (sub v-data v-model)
+           (sub h-data h-model)))
 
-(defn init-model
-  "Returns a model consisting of weight matrix, visible and hidden bias.
+(defn init-layer
+  "Returns a layer consisting of weight matrix, visible and hidden bias.
   Weight matrix and hidden bias are initialized through a normal distribution
   around 0 with sd 0.01 to break symmetry."
   [v-count h-count]
-  [(matrix (repeatedly h-count (fn [] (sample-normal v-count :mean 0 :sd 0.01))))
-   (vec (sample-normal v-count :mean 0 :sd 0.01))
-   (vec (repeat h-count 0))])
+  (->Layer (matrix (repeatedly h-count (fn [] (sample-normal v-count :mean 0 :sd 0.01))))
+           (vec (sample-normal v-count :mean 0 :sd 0.01))
+           (vec (repeat h-count 0))))
 
-(defn train-cd [[weights v-bias h-bias :as model] data rate]
-  (reduce (fn [[weights v-bias h-bias :as model] v-probs]
+
+(defn train-cd [layer data rate]
+  (reduce (fn [{:keys [weights v-bias h-bias] :as layer} v-probs]
             (let [v-data (sample-binary v-probs) ;
-                  h-probs (probs-h-given-v weights v-bias h-bias v-data)
+                  h-probs (probs-h-given-v layer v-data)
                   h-data (sample-binary h-probs)
-                  chain (cd weights v-bias h-bias v-data h-data 1)
+                  chain (cd layer v-data h-data 1)
                   up (calc-up (get chain (- (count chain) 2))
-                              (get chain (dec (count chain)))
-                              v-probs h-probs)]
-              ;; use doall to not be too lazy here (otherwise the
-              ;; stack might blow up on realization, since all
-              ;; training was still waiting in the lazy sequence)
-              (doall (map #(add %1 (mul %2 rate)) model up))))
-          model
+                               (get chain (dec (count chain)))
+                               v-probs h-probs)]
+              (merge-with #(add %1 (mul %2 rate))
+                          layer
+                          up)))
+          layer
           data))
+
+(defn train-cd-batch [layer batches rate]
+  (reduce (fn [layer v-probs-batch]
+            (let [v-data-batch (map sample-binary v-probs-batch)
+                  h-probs-batch (->> v-data-batch
+                                     prepare-batch
+                                     (probs-hs-given-vs layer))
+                  h-data-batch (map sample-binary h-probs-batch)
+                  chain (cd-batch layer v-data-batch h-data-batch 1)
+                  up (calc-up (apply mat/add (get chain (- (count chain) 2)))
+                               (apply mat/add (get chain (dec (count chain))))
+                               (apply mat/add v-probs-batch)
+                               (apply mat/add h-probs-batch))]
+              (merge-with #(add %1 (mul %2 (/ rate (count v-probs-batch))))
+                          layer
+                          up)))
+          layer
+          batches))
 
 
 (comment
   ;; require some more stuff for live coding, should not be in the library
-  (require '[criterium.core :refer [bench]]
+  (require '[boltzmann.mnist :as mnist]
+           '[criterium.core :refer [bench]]
            '[incanter.core :as i]
            '[incanter.datasets :as ds]
            '[incanter.charts :as c])
 
-  ;; do a simple test with a small state space, so we can compare to the ideal distribution:
+  (def images (mnist/read-images "resources/train-images-idx3-ubyte"))
 
+  (def batches (doall (partition 10 images)))
+
+  (bench (train-cd-batch (init-layer 784 1000) (take 10 batches) 0.1))
+
+  (def labels (mnist/read-labels "resources/train-labels-idx1-ubyte"))
+
+
+  ;; test batch fns
   (let [weights [[0.5 0.1 0.3 -0.8]
                  [0.3 0.5 0.3 0.1]]
         v-bias [0.5 0.8 0.3 -0.7]
         h-bias [0.2 -0.3]
+        layer (Layer. weights v-bias h-bias)
+        v-count (count v-bias)
+        h-count (count h-bias)
+        samples (mapv #(vec (take (count v-bias) %))
+                      (boltz-gibbs-sampler (full-matrix weights)
+                                           (vec (concat v-bias h-bias))
+                                           10000))
+        histo (reduce #(update-in %1 [%2] (fnil inc 0)) {} samples)
+
+        eta 0.001
+        all-states (mapv vec (apply cartesian-product (repeat v-count [0 1])))
+        probs (map #(boltz-prob weights v-bias all-states %)
+                   all-states)
+
+        model (reduce (fn [model step]
+                        (train-cd-batch model
+                                        (partition 10 samples)
+                                        (/ eta step)))
+                      (init-layer v-count h-count)
+                      (range 1 10))
+        {w* :weights vb* :v-bias hb* :h-bias} model
+        model-samples (mapv #(vec (take v-count %))
+                            (boltz-gibbs-sampler (full-matrix w*)
+                                                 (vec (concat vb* hb*))
+                                                 10000))
+        model-histo (reduce #(update-in %1 [%2] (fnil inc 0)) {} model-samples)
+
+        states (interleave all-states all-states all-states)
+        probabilities (interleave probs
+                                  (map #(/ % (count samples)) (map histo all-states))
+                                  (map #(/ % (count model-samples)) (map model-histo all-states)))
+        grouping (interleave (repeat "ideal") (repeat "sampled") (repeat "model"))]
+    (i/view (c/bar-chart states probabilities
+                         :group-by grouping
+                         :legend true)))
+
+
+  ;; do a simple (non-batch) test with a small state space, so we can compare to the ideal distribution:
+  (let [weights [[0.5 0.1 0.3 -0.8]
+                 [0.3 0.5 0.3 0.1]]
+        v-bias [0.5 0.8 0.3 -0.7]
+        h-bias [0.2 -0.3]
+        layer (Layer. weights v-bias h-bias)
         v-count (count v-bias)
         h-count (count h-bias)
         samples (mapv #(vec (take (count v-bias) %))
@@ -105,9 +217,9 @@
 
         model (reduce (fn [model step]
                         (train-cd model samples (/ eta step)))
-                      (init-model v-count h-count)
+                      (init-layer v-count h-count)
                       (range 1 10))
-        [w* vb* hb*] model
+        {w* :weights vb* :v-bias hb* :h-bias} model
         model-samples (mapv #(vec (take v-count %))
                             (boltz-gibbs-sampler (full-matrix w*)
                                                  (vec (concat vb* hb*))
@@ -190,4 +302,5 @@
   (i/view (c/bar-chart :year :passengers :group-by :month :legend true :data data))
 
   (mat/set-current-implementation :clatrix)
+  (mat/set-current-implementation :persistent-vector)
   (mat/current-implementation))

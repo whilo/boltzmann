@@ -1,6 +1,6 @@
 (ns boltzmann.formulas
-  (:require [clojure.core.matrix :refer [dot get-row exp log matrix]]))
-
+  (:require [clojure.core.matrix :refer [dot get-row exp log matrix transpose
+                                         zero-matrix join-along]]))
 
 (defn σ [x]
   (/ 1
@@ -22,23 +22,24 @@
 (defn boltz-cond-prob [w bs x i]
   (σ (+ (dot x (get-row w i)) (get bs i))))
 
+(defn boltz-cond-prob-batch [w batch]
+  (->> (dot w (transpose batch))
+       transpose
+       ;; TODO implement sigmoid as matrix op through exp
+       (map #(map σ %))))
+
 (defn full-matrix
   "Expands a matrix from a restricted Boltzmann machine, which only
   covers visible and hidden units, into a symmetric matrix with zero
   blocks between units of each layer. This is used to use the normal
-  gibbs-sampler to sample from the Boltzmann machine."
+  gibbs-sampler to sample from the full Boltzmann machine."
   [visi-hidden-matrix]
-  ;; could be shorter, more declarative; still straight port from python
   (let [v-count (count (first visi-hidden-matrix))
-        h-count (count visi-hidden-matrix)
-        total (+ v-count h-count)
-        M (matrix (repeat total (repeat total 0)))]
-    (->> (for [i (range h-count)
-               j (range v-count)]
-           [i j])
-         (reduce (fn [M [i j]]
-                   (-> M
-                       (assoc-in [(+ v-count i) j] (get-in visi-hidden-matrix [i j]))
-                       (assoc-in [(- (dec v-count) j) (+ v-count i)]
-                                 (get-in visi-hidden-matrix [i (- (dec v-count) j)]))))
-                 M))))
+        h-count (count visi-hidden-matrix)]
+    (join-along 0 ;; append to bottom
+                (join-along 1 ;; append to right
+                            (zero-matrix v-count v-count)
+                            (transpose visi-hidden-matrix))
+                (join-along 1
+                            visi-hidden-matrix
+                            (zero-matrix h-count h-count)))))

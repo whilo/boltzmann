@@ -12,6 +12,9 @@
                  [byte-streams "0.1.13"]
                  ;; TODO move into dev profile again for release
                  [incanter "1.5.5"]
-                 [criterium "0.4.3"]]
+                 [criterium "0.4.3"]
+                 ;; TODO remove sqlite experiment
+                 [org.clojure/java.jdbc "0.3.5"]
+                 [org.xerial/sqlite-jdbc "3.7.2"]]
   ;; deactivate tiered compilation to allow proper benchmarks with criterium
   :jvm-opts ^:replace [])
