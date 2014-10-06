@@ -1,5 +1,5 @@
 (ns boltzmann.formulas
-  (:require [clojure.core.matrix :refer [dot get-row exp log matrix transpose
+  (:require [clojure.core.matrix :refer [add dot mmul get-row exp log matrix transpose
                                          zero-matrix join-along]]))
 
 (defn σ [x]
@@ -22,11 +22,11 @@
 (defn boltz-cond-prob [w bs x i]
   (σ (+ (dot x (get-row w i)) (get bs i))))
 
-(defn boltz-cond-prob-batch [w batch]
-  (->> (dot w (transpose batch))
+(defn boltz-cond-prob-batch [w bias batch]
+  (->> (mmul w (transpose batch))
        transpose
        ;; TODO implement sigmoid as matrix op through exp
-       (map #(map σ %))))
+       (map #(map σ (add % bias)))))
 
 (defn full-matrix
   "Expands a matrix from a restricted Boltzmann machine, which only

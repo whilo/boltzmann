@@ -5,6 +5,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                  [net.mikera/core.matrix "0.29.1"]
+                 [clatrix "0.4.0"]
                  [org.clojure/math.combinatorics "0.0.4"
                   :exclusions [org.clojure/clojure]]
                  ;; for data loading, should go into separate dep for data

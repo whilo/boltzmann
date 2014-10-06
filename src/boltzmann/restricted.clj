@@ -10,6 +10,9 @@
 
 (defrecord Layer [weights v-bias h-bias])
 
+(defn create-layer [weights v-bias h-bias]
+  (->Layer (matrix weights) (matrix v-bias) (matrix h-bias)))
+
 (defn sample-binary [probabilities]
   (mapv (fn [p] (if (< (rand) p) 1 0)) probabilities))
 
@@ -26,24 +29,15 @@
   (mapv (fn [i] (boltz-cond-prob weights h-bias v-state i))
         (range (count h-bias))))
 
-(defn prepare-batch [states]
-  (mat/join-along 1 (repeat [1]) states))
-
 (defn probs-hs-given-vs [{:keys [weights h-bias]} v-states]
-  (boltz-cond-prob-batch (mat/join-along 1
-                                         (map vector h-bias)
-                                         weights)
-                         v-states))
+  (boltz-cond-prob-batch weights h-bias v-states))
 
 (defn probs-v-given-h [{:keys [weights v-bias h-bias]} h-state]
   (mapv (fn [i] (boltz-cond-prob (transpose weights) v-bias h-state i))
         (range (count v-bias))))
 
 (defn probs-vs-given-hs [{:keys [weights v-bias]} h-states]
-  (boltz-cond-prob-batch (mat/join-along 1
-                                         (map vector v-bias)
-                                         (transpose weights))
-                         h-states))
+  (boltz-cond-prob-batch (transpose weights) v-bias h-states))
 
 (defn cd
   "Implements contrastive divergence with duration steps (CD-k),
@@ -73,13 +67,11 @@
        (let [last (get chain (dec (count chain)))
              v-recons (->> last
                            (map sample-binary)
-                           prepare-batch
                            (probs-vs-given-hs layer))]
          (-> chain
              (conj v-recons)
              (conj (->> v-recons
                         (map sample-binary)
-                        prepare-batch
                         (probs-hs-given-vs layer) )))))
      init-chain
      (range duration))))
@@ -88,19 +80,39 @@
   "Calculate the total updates on the model (usually calculated through a cd chain,
   approximating <v-data,h-data> - <v-model,h-model>. "
   [v-model h-model v-data h-data]
-  (->Layer (matrix (mapv #(sub (mul v-data %1)
-                               (mul v-model %2)) h-data h-model))
-           (sub v-data v-model)
-           (sub h-data h-model)))
+  ;; jvisualvm: current 9/10 overhead in cd learning mapv
+  (create-layer #_(sub (mat/outer-product h-data v-data)
+                       (mat/outer-product h-model v-model))
+                #_(matrix (mat/emap #(sub (mul v-data %1)
+                                          (mul v-model %2)) h-data h-model))
+                (sub (transpose (mul (transpose (matrix (repeat (count h-model) v-data))) h-data))
+                     (transpose (mul (transpose (matrix (repeat (count h-model) v-model))) h-model)))
+
+                #_(sub (mat/emul (matrix (repeat (count h-model) v-data)) (matrix h-data))
+                       (mat/emul (matrix (repeat (count h-model) v-model)) (matrix h-model)))
+                (sub v-data v-model)
+                (sub h-data h-model)))
+
+(comment
+  (mat/emul (repeat 2 [1 2]) [[3 4]])
+
+  (type (mat/outer-product (type (matrix [1 2])) (matrix [3 4])))
+
+  (mat/sub (transpose (mat/mul (transpose (matrix [[1 2] [3 4]])) (matrix [[5 6]])))
+           (mat/mul [[1 2] [2 3]] (matrix [5 6])))
+
+  (matrix (repeat 2 [1 2]))
+
+  (calc-up [1 2] [2 3] [5 8] [6 9]))
 
 (defn init-layer
   "Returns a layer consisting of weight matrix, visible and hidden bias.
   Weight matrix and hidden bias are initialized through a normal distribution
   around 0 with sd 0.01 to break symmetry."
   [v-count h-count]
-  (->Layer (matrix (repeatedly h-count (fn [] (sample-normal v-count :mean 0 :sd 0.01))))
-           (vec (sample-normal v-count :mean 0 :sd 0.01))
-           (vec (repeat h-count 0))))
+  (create-layer (matrix (repeatedly h-count (fn [] (sample-normal v-count :mean 0 :sd 0.01))))
+                (vec (sample-normal v-count :mean 0 :sd 0.01))
+                (vec (repeat h-count 0))))
 
 
 (defn train-cd [layer data rate]
@@ -121,15 +133,13 @@
 (defn train-cd-batch [layer batches rate]
   (reduce (fn [layer v-probs-batch]
             (let [v-data-batch (map sample-binary v-probs-batch)
-                  h-probs-batch (->> v-data-batch
-                                     prepare-batch
-                                     (probs-hs-given-vs layer))
+                  h-probs-batch (probs-hs-given-vs layer v-data-batch)
                   h-data-batch (map sample-binary h-probs-batch)
                   chain (cd-batch layer v-data-batch h-data-batch 1)
                   up (calc-up (apply mat/add (get chain (- (count chain) 2)))
-                               (apply mat/add (get chain (dec (count chain))))
-                               (apply mat/add v-probs-batch)
-                               (apply mat/add h-probs-batch))]
+                              (apply mat/add (get chain (dec (count chain))))
+                              (apply mat/add v-probs-batch)
+                              (apply mat/add h-probs-batch))]
               (merge-with #(add %1 (mul %2 (/ rate (count v-probs-batch))))
                           layer
                           up)))
@@ -140,19 +150,48 @@
 (comment
   ;; require some more stuff for live coding, should not be in the library
   (require '[boltzmann.mnist :as mnist]
-           '[criterium.core :refer [bench]]
-           '[incanter.core :as i]
-           '[incanter.datasets :as ds]
-           '[incanter.charts :as c])
+           '[criterium.core :refer [bench]])
+
 
   (def images (mnist/read-images "resources/train-images-idx3-ubyte"))
 
   (def batches (doall (partition 10 images)))
 
-  (bench (train-cd-batch (init-layer 784 1000) (take 10 batches) 0.1))
+  (bench (train-cd-batch (init-layer 784 1000) (take 10 batches) 0.1) :verbose)
+
+  (type (mat/matrix [[1 2]]))
+
+  (let [il (init-layer 784 1000)]
+    #_(->> (first batches)
+         (probs-hs-given-vs il)
+         time)
+    (time (train-cd-batch il (take 10 batches) 0.1)))
+
+  (let [{:keys [weights h-bias]} (init-layer 784 1000)
+        [batch] batches
+        w (mat/join-along 1
+                          (matrix (map vector h-bias))
+                          weights)
+        b (transpose (matrix batch))]
+    (time (mat/mmul w b))
+    (count b))
+
+  (mat/mmul (matrix [[1 2] [3 4]]) (matrix (transpose [[2 3]])))
+
+  (clatrix.core/clatrix? (mat/matrix [[1 2]]))
+  (import '[org.jblas DoubleMatrix])
+
+  ;; investigate theano error fn
 
   (def labels (mnist/read-labels "resources/train-labels-idx1-ubyte"))
 
+  (/ (* 5000 7.9)
+     3600.)
+
+
+  (require '[incanter.core :as i]
+           '[incanter.datasets :as ds]
+           '[incanter.charts :as c])
 
   ;; test batch fns
   (let [weights [[0.5 0.1 0.3 -0.8]
