@@ -16,7 +16,8 @@ TODO put on clojars and demonstrate some learning.
 - train some mnist and add model + performance table
 - implement PCD
 - implement more plots & visualize training of mnist
-- do benchmarking (esp. of matrix ops) and algorithmic optimizations
+- do benchmarking (esp. of matrix ops) and algorithmic optimizations:
+  investigate https://github.com/fommil/netlib-java/ with mtj, for 1000x1000 matrices 10x speedup on cpu vs. jBLAS on google mmul benchmark; investigate jcublas for gpu
 - implement/port AIS, CAST
 - make incanter dev dependency
 - add python version for comparison?
