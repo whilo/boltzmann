@@ -60,9 +60,9 @@
     (- (log (partition bm))))
 
 (defn kullback-leibler [bm states]
-  (reduce (fn [sum x]
-            (+ sum (* (prob bm x)
-                      (log (/ (prob bm x)
-                              (/ 1 (count states)))))))
-          0
-          states))
+  (let [q (/ 1 (count states))]
+    (reduce (fn [sum x]
+              (+ sum (* q (log (/ (prob bm x)
+                                  q)))))
+            0
+            states)))

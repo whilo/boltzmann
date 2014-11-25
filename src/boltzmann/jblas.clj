@@ -2,7 +2,6 @@
   "Optimized code that is inlined with JBlas in critical parts and type-hinted."
   (:require [boltzmann.protocols :refer :all]
             [boltzmann.matrix :refer [full-matrix]]
-            [boltzmann.batch-formulas :refer :all]
             [boltzmann.formulas :refer [cond-prob]] ;; TODO remove with batch sampling
             [boltzmann.sample :refer [sample-binary]]
             [clatrix.core :refer [->Matrix]]
@@ -112,6 +111,7 @@
   (-biases [this] (vec (concat v-biases h-biases)))
   (-weights [this] (full-matrix restricted-weights))
 
+
   PRestrictedBoltzmannMachine
   (-v-biases [this] v-biases)
   (-h-biases [this] h-biases)
@@ -142,43 +142,82 @@
               [(vec start-state)]
               (range iterations)))))
 
+
+(defmethod print-method JBlasRBM [v ^java.io.Writer w]
+  (.write w (str "#boltzmann.jblas/JBlasRBM "
+                 {:restricted-weights (mapv (comp vec seq) (:restricted-weights v))
+                  :v-biases (vec (seq (:v-biases v)))
+                  :h-biases (vec (seq (:h-biases v)))})))
+
+
 (defn create-jblas-rbm
   ([v-count h-count]
-     (let [scaled-sd (/ 0.01 (+ v-count h-count))]
-       (->JBlasRBM
-        (matrix (repeatedly h-count
-                            (fn [] (sample-normal v-count :mean 0 :sd scaled-sd))))
-        (matrix [(vec (sample-normal v-count :mean 0 :sd scaled-sd))])
-        (matrix [(vec (repeat h-count 0))]))))
+     (->JBlasRBM
+      (matrix (repeatedly h-count
+                          (fn [] (sample-normal v-count :mean 0 :sd 0.01))))
+      (matrix [(vec (sample-normal v-count :mean 0 :sd 0.01))])
+      (matrix [(vec (repeat h-count 0))])))
   ([restricted-weights v-biases h-biases]
      (->JBlasRBM (matrix restricted-weights)
                  (matrix [v-biases])
                  (matrix [h-biases]))))
 
+(defn load-jblas-rbm [{:keys [restricted-weights v-biases h-biases]}]
+  (->JBlasRBM (matrix restricted-weights)
+              (matrix [v-biases])
+              (matrix [h-biases])))
+
+
+(defn bin-label [l]
+    (assoc (vec (repeat 10 0)) (int l) 1))
+
+(defn max-index [probs]
+    (let [m (apply max probs)]
+      (reduce (fn [sum p] (if (= m p) (reduced sum)
+                             (inc sum)))
+              0
+              probs)))
+
+(defn classification-rate [labels classified]
+    (/ (count (filter (partial apply =)
+                      (partition 2 (interleave labels classified))))
+       (count classified)))
 
 (comment
-  (create-jblas-rbm 4 2)
   ;; require some more stuff for live coding, should not be in the library
   (require '[boltzmann.mnist :as mnist]
            '[criterium.core :refer [bench]])
 
-  (mat/set-current-implementation :persistent-vector)
   (mat/current-implementation)
+  ;(mat/set-current-implementation :persistent-vector)
 
   (future (def images (mnist/read-images "resources/train-images-idx3-ubyte"))
           (def batches (doall (map matrix (partition 10 images)))))
-
-  (bench (train-cd-batch (init-layer 784 1000) (take 10 batches) 0.1) :verbose)
-
 
   ;; investigate theano error fn
 
   (def labels (mnist/read-labels "resources/train-labels-idx1-ubyte"))
 
+  (def labeled-images
+    (map #(float-array (concat %1 %2)) (map bin-label labels) images))
+
+  (def labeled-batches
+    (doall (map matrix (partition 10 labeled-images))))
+
+  (require '[clojure.edn :as edn])
+
+  ;; TODO why are hidden biases 0?
+  (def trained
+    (edn/read-string {:readers {'boltzmann.jblas/JBlasRBM load-jblas-rbm}}
+                     (slurp "resources/mnist.edn")))
+
+  (spit "resources/mnist.edn" (prn-str trained))
+
+
 
   (def trained
-    (let [rbm (create-jblas-rbm 784 1000)]
-      (time (-train-cd rbm (take 100 batches) 1 0.1 1 1))))
+    (let [rbm (create-jblas-rbm 794 100)]
+      (time (-train-cd rbm (take 10000 labeled-batches) 5 0.1 1))))
 
   (->> images
        (take 100)
@@ -191,4 +230,39 @@
        (map #(partition 28 %))
        (mnist/tile 10)
        mnist/render-grayscale-float-matrix
-       mnist/view))
+       mnist/view)
+
+  (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
+
+
+
+  (def classified
+    (->> test-images
+         (take 2000)
+         (map (comp matrix vector))
+         (map #(->> %
+                    (probs-hs-given-vs [(:restricted-weights trained)
+                                        (:h-biases trained)])
+                    (probs-vs-given-hs [(:restricted-weights trained)
+                                        (:v-biases trained)])))
+         (map (partial take 10))
+         (map max-index)))
+
+
+
+  (float (classification-rate labels classified))
+
+  (->> test-images
+       (take 100)
+       (map (comp matrix vector))
+       (map #(->> %
+                  (probs-hs-given-vs [(:restricted-weights trained)
+                                      (:h-biases trained)])
+                  (probs-vs-given-hs [(:restricted-weights trained)
+                                      (:v-biases trained)])))
+       (map (partial drop 10))
+       (map #(partition 28 %))
+       (mnist/tile 10)
+       mnist/render-grayscale-float-matrix
+       mnist/view)
+  )
