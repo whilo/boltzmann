@@ -80,7 +80,6 @@
      init-chain
      (range duration))))
 
-;; TODO dedup, atm. outer-product needs DoubleMatrix types for performance
 (defn calc-batch-up
   "Calculate the total updates on the model (usually calculated through a cd chain,
   approximating <v-data,h-data> - <v-model,h-model>. "
@@ -90,18 +89,29 @@
    (sub v-data v-model)
    (sub h-data h-model)])
 
+(defn calc-batch-up
+  "Calculate the total updates on the model (usually calculated through a cd chain,
+  approximating <v-data,h-data> - <v-model,h-model>. "
+  [v-model-batch h-model-batch v-data-batch h-data-batch]
+  [(sub (reduce add (map outer-product h-data-batch v-data-batch))
+        (reduce add (map outer-product h-model-batch v-model-batch)))
+   (sub (reduce add v-data-batch)
+        (reduce add v-model-batch))
+   (sub (reduce add h-data-batch)
+        (reduce add h-model-batch))])
+
 (defn train-cd-batch [[w vbs hbs] batches rate k]
   (reduce (fn [[w vbs hbs] v-probs-batch]
             (let [v-data-batch (sample-binary-matrix v-probs-batch)
                   h-probs-batch (probs-hs-given-vs [w hbs] v-data-batch)
                   chain (cd-batch [w vbs hbs] v-probs-batch h-probs-batch k)
-                  up (calc-batch-up (apply add (get chain (- (count chain) 2)))
-                                    (apply add (get chain (dec (count chain))))
-                                    (apply add v-probs-batch)
-                                    (apply add h-probs-batch))]
+                  up (calc-batch-up (get chain (- (count chain) 2))
+                                    (get chain (dec (count chain)))
+                                    v-probs-batch
+                                    h-probs-batch)]
               (map #(add %1 (mul %2 (/ rate (count v-probs-batch))))
-                          [w vbs hbs]
-                          up)))
+                   [w vbs hbs]
+                   up)))
           [w vbs hbs]
           batches))
 
@@ -121,13 +131,18 @@
   (-train-cd [this batches epochs learning-rate k]
     (let [[weights v-bias h-bias]
           (reduce (fn [model step]
-                    (train-cd-batch [restricted-weights v-biases h-biases]
+                    (println "Training epoch" step "rate:" (/ learning-rate step))
+                    (train-cd-batch model
                                     batches
                                     (/ learning-rate step)
                                     k))
-                  this
+                  [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
-      (assoc this :restricted-weights weights :input v-bias :output h-bias)))
+      (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias
+             :trained {:epochs epochs
+                       :learning-rate learning-rate
+                       :batch-size (count (first batches))
+                       :cd-steps k})))
 
 
   PSample
@@ -145,9 +160,11 @@
 
 (defmethod print-method JBlasRBM [v ^java.io.Writer w]
   (.write w (str "#boltzmann.jblas/JBlasRBM "
-                 {:restricted-weights (mapv (comp vec seq) (:restricted-weights v))
-                  :v-biases (vec (seq (:v-biases v)))
-                  :h-biases (vec (seq (:h-biases v)))})))
+                 (merge (into {} v)
+                        {:restricted-weights
+                         (mapv (comp vec seq) (:restricted-weights v))
+                         :v-biases (vec (seq (:v-biases v)))
+                         :h-biases (vec (seq (:h-biases v)))}))))
 
 
 (defn create-jblas-rbm
@@ -162,10 +179,11 @@
                  (matrix [v-biases])
                  (matrix [h-biases]))))
 
-(defn load-jblas-rbm [{:keys [restricted-weights v-biases h-biases]}]
-  (->JBlasRBM (matrix restricted-weights)
-              (matrix [v-biases])
-              (matrix [h-biases])))
+(defn load-jblas-rbm [{:keys [restricted-weights v-biases h-biases] :as rbm}]
+  (merge (->JBlasRBM (matrix restricted-weights)
+                     (matrix [v-biases])
+                     (matrix [h-biases]))
+         (dissoc rbm :restricted-weigths :v-biases :h-biases)))
 
 
 (defn bin-label [l]
@@ -202,7 +220,7 @@
     (map #(float-array (concat %1 %2)) (map bin-label labels) images))
 
   (def labeled-batches
-    (doall (map matrix (partition 10 labeled-images))))
+    (doall (map matrix (partition 100 labeled-images))))
 
   (require '[clojure.edn :as edn])
 
@@ -216,8 +234,8 @@
 
 
   (def trained
-    (let [rbm (create-jblas-rbm 794 100)]
-      (time (-train-cd rbm (take 10000 labeled-batches) 5 0.1 1))))
+    (let [rbm (create-jblas-rbm 794 200)]
+      (time (-train-cd rbm labeled-batches 15 0.1 1))))
 
   (->> images
        (take 100)
@@ -238,7 +256,7 @@
 
   (def classified
     (->> test-images
-         (take 2000)
+         #_(take 6000)
          (map (comp matrix vector))
          (map #(->> %
                     (probs-hs-given-vs [(:restricted-weights trained)
