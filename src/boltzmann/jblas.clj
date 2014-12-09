@@ -5,7 +5,7 @@
             [boltzmann.formulas :refer [cond-prob]] ;; TODO remove with batch sampling
             [boltzmann.sample :refer [sample-binary]]
             [clatrix.core :refer [->Matrix]]
-            [clojure.core.matrix :refer [add sub mul matrix transpose columns get-row zero-matrix] :as mat]
+            [clojure.core.matrix :refer [add sub mul matrix transpose columns get-row zero-matrix rows] :as mat]
             [incanter.stats :refer [sample-normal]])
   (:import [org.jblas MatrixFunctions DoubleMatrix]
            [clatrix.core Matrix]))
@@ -80,14 +80,6 @@
      init-chain
      (range duration))))
 
-(defn calc-batch-up
-  "Calculate the total updates on the model (usually calculated through a cd chain,
-  approximating <v-data,h-data> - <v-model,h-model>. "
-  [v-model h-model v-data h-data]
-  [(sub (outer-product h-data v-data)
-        (outer-product h-model v-model))
-   (sub v-data v-model)
-   (sub h-data h-model)])
 
 (defn calc-batch-up
   "Calculate the total updates on the model (usually calculated through a cd chain,
@@ -105,10 +97,14 @@
             (let [v-data-batch (sample-binary-matrix v-probs-batch)
                   h-probs-batch (probs-hs-given-vs [w hbs] v-data-batch)
                   chain (cd-batch [w vbs hbs] v-probs-batch h-probs-batch k)
-                  up (calc-batch-up (get chain (- (count chain) 2))
-                                    (get chain (dec (count chain)))
-                                    v-probs-batch
-                                    h-probs-batch)]
+                  up (calc-batch-up (map (comp mat/matrix vector)
+                                         (rows (get chain (- (count chain) 2))))
+                                    (map (comp mat/matrix vector)
+                                         (rows (get chain (dec (count chain)))))
+                                    (map (comp mat/matrix vector)
+                                         (rows v-probs-batch))
+                                    (map (comp mat/matrix vector)
+                                         (rows h-probs-batch)))]
               (map #(add %1 (mul %2 (/ rate (count v-probs-batch))))
                    [w vbs hbs]
                    up)))
@@ -183,7 +179,7 @@
   (merge (->JBlasRBM (matrix restricted-weights)
                      (matrix [v-biases])
                      (matrix [h-biases]))
-         (dissoc rbm :restricted-weigths :v-biases :h-biases)))
+         (dissoc rbm :restricted-weights :v-biases :h-biases)))
 
 
 (defn bin-label [l]
@@ -224,18 +220,17 @@
 
   (require '[clojure.edn :as edn])
 
-  ;; TODO why are hidden biases 0?
   (def trained
     (edn/read-string {:readers {'boltzmann.jblas/JBlasRBM load-jblas-rbm}}
-                     (slurp "resources/mnist.edn")))
+                     (slurp "resources/mnist-labeled.edn")))
 
-  (spit "resources/mnist.edn" (prn-str trained))
+  (spit "resources/mnist-labeled.edn" (prn-str trained))
 
 
 
   (def trained
-    (let [rbm (create-jblas-rbm 794 200)]
-      (time (-train-cd rbm labeled-batches 15 0.1 1))))
+    (let [rbm (create-jblas-rbm 794 500)]
+      (time (-train-cd rbm labeled-batches 40 0.1 1))))
 
   (->> images
        (take 100)

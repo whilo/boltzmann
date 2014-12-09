@@ -12,7 +12,7 @@
 
 (defn prob
   "Calculates the theoretical probability of the Boltzmann machine of state x.
-  !!! o(exp), intractable for state spaces > 8 !!!"
+  !!! o(exp), intractable for (smaller) layer sizes > 20 !!!"
   [bm x]
   (f/prob (-weights bm) (-biases bm) x))
 
@@ -46,11 +46,11 @@
                        [0.2 -0.8 -0.3 0.0]]
               v-bias [0.5 0.8 0.3 -0.7]
               h-bias [0.2 -0.3 0.0]
-              rbm (create-jblas-rbm weights v-bias h-bias)
+              rbm (create-theoretical-rbm weights v-bias h-bias)
               v-count (count v-bias)
               h-count (count h-bias)
               samples (mapv #(vec (take v-count %))
-                            (sample-gibbs rbm 30000))
+                            (sample-gibbs rbm 60000))
               histo (frequencies samples)
 
               all-states (state-space v-count)
@@ -58,9 +58,10 @@
               probs (map #(f/prob weights v-bias %) all-states)
 
               batches (doall (map mat/matrix (partition 10 samples)))
-              model (train-cd (create-jblas-rbm v-count h-count) batches :epochs 10)
+              model (train-cd (create-theoretical-rbm v-count h-count) batches :epochs 30)
+                                        ;             model (train-cd (create-jblas-rbm v-count h-count) batches :epochs 10)
               model-samples (mapv #(vec (take v-count %))
-                                  (sample-gibbs model 30000))
+                                  (sample-gibbs model 60000))
               model-histo (frequencies model-samples)
 
               states (interleave all-states all-states all-states)
@@ -73,5 +74,38 @@
                                :group-by grouping
                                :legend true))))
 
+  (def xor-states [[0 0 0] [0 1 1] [1 0 1] [1 1 1]])
 
+  (mat/set-current-implementation :clatrix)
+
+  (def xor-model
+    (train-cd (create-jblas-rbm 3 2)
+              (map (comp mat/matrix vector) xor-states)
+              :epochs 5000))
+
+  (let [v-count 3
+        all-states (state-space v-count)
+        model xor-model
+        model-samples (mapv #(vec (take v-count %)) (sample-gibbs model 30000))
+        model-histo (frequencies model-samples)
+        probabilities (map #(/ % (count model-samples)) (map model-histo all-states))
+        grouping (repeat "model")]
+    (i/view (c/bar-chart all-states probabilities
+                         :group-by grouping
+                         :legend true)))
+
+  (i/view (c/histogram (flatten (:restricted-weights xor-model))))
+  (i/view (c/histogram (flatten (:v-biases xor-model))))
+  (i/view (c/histogram (flatten (:h-biases xor-model))))
+
+  (require '[boltzmann.jblas :refer [probs-hs-given-vs probs-vs-given-hs]])
+
+  (->> xor-states
+       (map (comp mat/matrix vector))
+       (map #(->> %
+                  (probs-hs-given-vs [(:restricted-weights xor-model)
+                                      (:h-biases xor-model)])
+                  (probs-vs-given-hs [(:restricted-weights xor-model)
+                                      (:v-biases xor-model)])))
+       (map (partial take 3)))
   )

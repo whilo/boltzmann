@@ -13,13 +13,13 @@ Demonstrate mnist learning.
 ## TODO
 
 - put on clojars and demonstrate some learning.
-- introduce fixed seeds
 - track reconstruction error asynchronously and allow it to control/finish training
 - factor out mnist (norb etc.) data set learning for others
 - implement PCD
 - implement more plots & visualize training of mnist
+- introduce fixed seeds?
 - do benchmarking (esp. of matrix ops) and algorithmic optimizations:
-  investigate https://github.com/fommil/netlib-java/ with mtj, for 1000x1000 matrices 10x speedup on cpu vs. jBLAS on google mmul benchmark; investigate jcublas for gpu
+  investigate https://github.com/fommil/netlib-java/ with mtj, for 1000x1000 matrices 10x speedup on cpu vs. jBLAS on google mmul benchmark (jBLAS has support for netlib as well); investigate jcublas for gpu
 - implement/port AIS, CAST, AST sampling
 - make incanter dev dependency
 - try to hide from skynet ;-)

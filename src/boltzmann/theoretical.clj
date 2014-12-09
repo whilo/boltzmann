@@ -7,6 +7,7 @@
                                          transpose columns get-row outer-product] :as mat]
             [incanter.stats :refer [sample-normal]]))
 
+(mat/set-current-implementation :persistent-vector)
 
 (defn probs-h-given-v [[weights v-bias h-bias] v-state]
   (mapv (fn [i] (cond-prob weights h-bias v-state i))
@@ -43,24 +44,28 @@
    (sub v-data v-model)
    (sub h-data h-model)])
 
-(defn train-cd-epoch [[weights v-bias h-bias] batches rate k]
-  (reduce (fn [[weights v-bias h-bias] v-probs-batch]
-            (let [ups (for [v-probs v-probs-batch]
-                        (let [v-data (sample-binary v-probs)
-                              h-probs (probs-h-given-v [weights v-bias h-bias] v-data)
-                              h-data (sample-binary h-probs)
-                              chain (cd [weights v-bias h-bias] v-data h-data k)]
-                          (calc-up (get chain (- (count chain) 2))
-                                   (get chain (dec (count chain)))
-                                   v-probs h-probs)))]
-              (map #(add %1 (mul %2 (/ rate
-                                       (count v-probs-batch))))
+(defn train-cd-epoch [[weights v-bias h-bias] samples rate k]
+  (reduce (fn [[weights v-bias h-bias] v-probs]
+            (let [v-data (sample-binary v-probs)
+                  h-probs (probs-h-given-v [weights v-bias h-bias] v-data)
+                  h-data (sample-binary h-probs)
+                  chain (cd [weights v-bias h-bias] v-data h-data k)
+                  up (calc-up (get chain (- (count chain) 2))
+                              (get chain (dec (count chain)))
+                              v-probs h-probs)]
+              (map #(add %1 (mul %2 rate))
                    [weights v-bias h-bias]
-                   (reduce (fn [[ws vbs hbs] [w vb hb]]
-                             [(add ws w) (add vbs vb) (add hbs hb)]) ups))))
+                   up)))
           [weights v-bias h-bias]
-          batches))
+          samples))
 
+(defn- unpack-batches [batches]
+  (let [datum (ffirst batches)]
+    (if (or (seq? datum)
+            (vector? datum))
+      (do (println "Minibatch learning is an optimization and not implemented for the theoretical RBM implementation. Unpacking batches and training on singular samples.")
+          (apply concat batches))
+      batches)))
 
 
 (defrecord TheoreticalRBM [restricted-weights v-biases h-biases]
@@ -75,16 +80,15 @@
 
   PContrastiveDivergence
   (-train-cd [this batches epochs learning-rate k]
-    (let [[weights v-bias h-bias]
+    (let [samples (unpack-batches batches)
+          [weights v-bias h-bias]
           (reduce (fn [model step]
-                    (train-cd-epoch [restricted-weights v-biases h-biases]
-                                    batches
+                    (train-cd-epoch model samples
                                     (/ learning-rate step)
                                     k))
-                  this
+                  [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
       (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias)))
-
 
   PSample
   (-sample-gibbs [this iterations start-state particles]
