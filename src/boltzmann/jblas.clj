@@ -97,6 +97,7 @@
             (let [v-data-batch (sample-binary-matrix v-probs-batch)
                   h-probs-batch (probs-hs-given-vs [w hbs] v-data-batch)
                   chain (cd-batch [w vbs hbs] v-probs-batch h-probs-batch k)
+                  ;; fix copying https://github.com/tel/clatrix/issues/36#issuecomment-66277605
                   up (calc-batch-up (map (comp mat/matrix vector)
                                          (rows (get chain (- (count chain) 2))))
                                     (map (comp mat/matrix vector)
@@ -201,7 +202,10 @@
   ;; require some more stuff for live coding, should not be in the library
   (require '[boltzmann.mnist :as mnist]
            '[criterium.core :refer [bench]])
-
+  (require '[boltzmann.mnist :as mnist]
+           '[boltzmann.core :refer :all]
+           '[boltzmann.jblas :refer [create-jblas-rbm]]
+           '[clojure.core.matrix :as mat])
   (mat/current-implementation)
   ;(mat/set-current-implementation :persistent-vector)
 
@@ -229,8 +233,8 @@
 
 
   (def trained
-    (let [rbm (create-jblas-rbm 794 500)]
-      (time (-train-cd rbm labeled-batches 40 0.1 1))))
+    (let [rbm (create-jblas-rbm 794 100)]
+      (time (-train-cd rbm labeled-batches 4 0.01 1))))
 
   (->> images
        (take 100)
@@ -251,7 +255,7 @@
 
   (def classified
     (->> test-images
-         #_(take 6000)
+         (take 6000)
          (map (comp matrix vector))
          (map #(->> %
                     (probs-hs-given-vs [(:restricted-weights trained)
