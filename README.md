@@ -7,12 +7,13 @@ This repository is supposed to cover techniques building on [Restricted Boltzman
 This is a state-of-the-art [reference for deep learning in general in Python](http://deeplearning.net/tutorial/). Feel free to port examples to this library as an exercise and open pull-requests :).
 
 A reconstruction of the provided rbm vs. original digits:
-![reconstruction](https://github.com/ghubber/boltzmann/raw/master/src/resources/reconstructions.png)
-![original](https://github.com/ghubber/boltzmann/raw/master/src/resources/original.png)
+
+![reconstruction](../blob/master/resources/reconstructions.png)
+![original](../blob/master/resources/original.png)
 
 ## Usage
 
-Add a depencency to your leiningen project: `[net.polyc0l0r/boltzmann "0.1.0"].
+Add a depencency to your leiningen project: `[net.polyc0l0r/boltzmann "0.1.0"]`.
 
 First you have to fetch the [mnist dataset](http://yann.lecun.com/exdb/mnist/) and put it (gunzipped) into `/resources`.
 ~~~clojure
