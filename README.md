@@ -49,7 +49,7 @@ Training epoch 1 rate: 0.01
 Training epoch 2 rate: 0.005
 Training epoch 3 rate: 0.0033333333333333335
 Training epoch 4 rate: 0.0025
-"Elapsed time: 1323829.128328 msecs"
+"Elapsed time: 365486.867282 msecs"
 #'user/trained
 ;; build test-images with zeroed labels
 user> (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
@@ -126,9 +126,11 @@ user> (float (classification-rate labels classified))
 0.93583333
 ~~~
 
-You can find more examples including bar-charts of the theoretical (naive) implementation in the comments of `theoretical.clj` and `jblas.clj`.
+You can find more examples including bar-charts of the theoretical (naive) implementation in the comments of `core.clj` and `jblas.clj`.
 
 ## TODO
+- remove blobs from jar
+- find replacement for incanter's non-seedable sample-normal fn
 - track reconstruction error asynchronously and allow it to control/finish training
 - factor out mnist (norb etc.) data set learning for others
 - implement PCD

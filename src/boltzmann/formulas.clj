@@ -1,7 +1,11 @@
 (ns boltzmann.formulas
-  (:require [clojure.core.matrix :refer [add div dot mul mmul mget get-row exp log matrix transpose
-                                         zero-matrix join-along] :as mat]
-            [clojure.math.combinatorics :refer [cartesian-product]]))
+  (:require [clojure.core.matrix :refer [add dot mul mget get-row exp log matrix transpose] :as mat]
+            [clojure.math.combinatorics :refer [cartesian-product]]
+            [bigml.sampling.random :as rnd]))
+
+(defn create-seeded-rand [seed]
+  (let [prng (rnd/create :seed seed)]
+    (fn [] (rnd/next-double! prng))))
 
 (defn σ "Sigmoid function." [x]
   (/ 1

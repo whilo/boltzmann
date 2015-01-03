@@ -2,13 +2,15 @@
   "Optimized code that is inlined with JBlas in critical parts and type-hinted."
   (:require [boltzmann.protocols :refer :all]
             [boltzmann.matrix :refer [full-matrix]]
-            [boltzmann.formulas :refer [cond-prob]] ;; TODO remove with batch sampling
+            [boltzmann.formulas :refer [cond-prob create-seeded-rand]]
             [boltzmann.sample :refer [sample-binary]]
             [clatrix.core :refer [->Matrix]]
             [clojure.core.matrix :refer [add sub mul matrix transpose columns get-row zero-matrix rows] :as mat]
             [incanter.stats :refer [sample-normal]])
   (:import [org.jblas MatrixFunctions DoubleMatrix]
-           [clatrix.core Matrix]))
+           [clatrix.core Matrix]
+           [org.jblas.util Random]))
+
 
 ;; we use the fastest implementation of core.matrix for model sizes of 1000x1000
 ;; weight matrices, but persistent vector should always work for the simple training api
@@ -46,7 +48,10 @@
       (->Matrix {})))
 
 
-(defn sample-binary-matrix [m]
+(defn sample-binary-matrix
+  "Warning: Seed is currently set globally for jblas with
+  Random/rand. m is the matrix to sample from."
+  [seed m]
   (let [[x y] (mat/shape m)]
     (->Matrix (.ge (.-me m) (DoubleMatrix/rand x y))
               {})))
@@ -62,7 +67,7 @@
 (defn cd-batch
   "Implements contrastive divergence with duration steps (CD-k),
   a duration (k) = 1 is often used and performs reasonably."
-  [[w vbs hbs] v-data h-data duration]
+  [[w vbs hbs] v-data h-data duration seed]
   (let [v-count (count v-data)
         h-count (count h-data)
         init-chain [v-data h-data]]
@@ -70,12 +75,12 @@
      (fn [chain i]
        (let [last (get chain (dec (count chain)))
              v-recons (->> last
-                           sample-binary-matrix
+                           (sample-binary-matrix seed)
                            (probs-vs-given-hs [w vbs]))]
          (-> chain
              (conj v-recons)
              (conj (->> v-recons
-                        sample-binary-matrix
+                        (sample-binary-matrix seed)
                         (probs-hs-given-vs [w hbs]) )))))
      init-chain
      (range duration))))
@@ -92,11 +97,12 @@
    (sub (reduce add h-data-batch)
         (reduce add h-model-batch))])
 
-(defn train-cd-batch [[w vbs hbs] batches rate k]
+(defn train-cd-batch [[w vbs hbs] batches rate k seed]
+  (DoubleMatrix/rand seed) ;; WARNING, this is probably global and fails then with multithreading
   (reduce (fn [[w vbs hbs] v-probs-batch]
-            (let [v-data-batch (sample-binary-matrix v-probs-batch)
+            (let [v-data-batch (sample-binary-matrix seed v-probs-batch)
                   h-probs-batch (probs-hs-given-vs [w hbs] v-data-batch)
-                  chain (cd-batch [w vbs hbs] v-probs-batch h-probs-batch k)
+                  chain (cd-batch [w vbs hbs] v-probs-batch h-probs-batch k seed)
                   ;; fix copying https://github.com/tel/clatrix/issues/36#issuecomment-66277605
                   up (calc-batch-up (map (comp mat/matrix vector)
                                          (rows (get chain (- (count chain) 2))))
@@ -125,14 +131,15 @@
   (-restricted-weights [this] restricted-weights)
 
   PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k]
+  (-train-cd [this batches epochs learning-rate k seed]
     (let [[weights v-bias h-bias]
           (reduce (fn [model step]
                     (println "Training epoch" step "rate:" (/ learning-rate step))
                     (train-cd-batch model
                                     batches
                                     (/ learning-rate step)
-                                    k))
+                                    k
+                                    seed))
                   [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
       (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias
@@ -143,14 +150,15 @@
 
 
   PSample
-  (-sample-gibbs [this iterations start-state particles]
+  (-sample-gibbs [this iterations start-state particles seed]
     (let [w (-weights this)
-          bs (-biases this)]
+          bs (-biases this)
+          prng (create-seeded-rand seed)]
       (reduce (fn [chain step]
                 (let [last (get chain (dec (count chain)))]
                   (conj chain (->> (range (count bs))
                                    (map (partial cond-prob w bs last))
-                                   sample-binary))))
+                                   (sample-binary prng)))))
               [(vec start-state)]
               (range iterations)))))
 
@@ -202,12 +210,9 @@
   ;; require some more stuff for live coding, should not be in the library
   (require '[boltzmann.mnist :as mnist]
            '[criterium.core :refer [bench]])
-  (require '[boltzmann.mnist :as mnist]
-           '[boltzmann.core :refer :all]
-           '[boltzmann.jblas :refer [create-jblas-rbm]]
-           '[clojure.core.matrix :as mat])
+
   (mat/current-implementation)
-  ;(mat/set-current-implementation :persistent-vector)
+                                        ;(mat/set-current-implementation :persistent-vector)
 
   (future (def images (mnist/read-images "resources/train-images-idx3-ubyte"))
           (def batches (doall (map matrix (partition 10 images)))))
@@ -236,7 +241,10 @@
     (let [rbm (create-jblas-rbm 794 100)]
       (time (-train-cd rbm labeled-batches 4 0.01 1))))
 
-  (->> images
+
+  (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
+
+  (->> test-images
        (take 100)
        (map (comp matrix vector))
        (map #(->> %
@@ -244,14 +252,11 @@
                                       (:h-biases trained)])
                   (probs-vs-given-hs [(:restricted-weights trained)
                                       (:v-biases trained)])))
+       (map (partial drop 10))
        (map #(partition 28 %))
        (mnist/tile 10)
        mnist/render-grayscale-float-matrix
        mnist/view)
-
-  (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
-
-
 
   (def classified
     (->> test-images
@@ -269,17 +274,5 @@
 
   (float (classification-rate labels classified))
 
-  (->> test-images
-       (take 100)
-       (map (comp matrix vector))
-       (map #(->> %
-                  (probs-hs-given-vs [(:restricted-weights trained)
-                                      (:h-biases trained)])
-                  (probs-vs-given-hs [(:restricted-weights trained)
-                                      (:v-biases trained)])))
-       (map (partial drop 10))
-       (map #(partition 28 %))
-       (mnist/tile 10)
-       mnist/render-grayscale-float-matrix
-       mnist/view)
+
   )

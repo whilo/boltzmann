@@ -2,7 +2,6 @@
   (:require [boltzmann.protocols :refer :all]
             [boltzmann.formulas :as f]))
 
-
 (def state-space f/state-space)
 
 (defn energy
@@ -16,14 +15,15 @@
   [bm x]
   (f/prob (-weights bm) (-biases bm) x))
 
-(defn sample-gibbs [bm iterations & {:keys [start-state particles]
+(defn sample-gibbs [bm iterations & {:keys [start-state particles seed]
                                      :or {start-state (repeat (count (-biases bm)) 0)
-                                          particles 1}}]
-  (-sample-gibbs bm iterations start-state particles))
+                                          particles 1
+                                          seed 42}}]
+  (-sample-gibbs bm iterations start-state particles seed))
 
-(defn train-cd [rbm batches & {:keys [epochs learning-rate k]
-                               :or {epochs 1 learning-rate 0.01 k 1}}]
-  (-train-cd rbm batches epochs learning-rate k))
+(defn train-cd [rbm batches & {:keys [epochs learning-rate k seed]
+                               :or {epochs 1 learning-rate 0.01 k 1 seed 42}}]
+  (-train-cd rbm batches epochs learning-rate k seed))
 
 
 (comment
@@ -41,7 +41,8 @@
 
   (require '[clojure.data.json :as json])
 
-  (mat/set-current-implementation :persistent-vector)
+
+  (mat/set-current-implementation :clatrix)
   (time (let [weights [[0.5 -0.2 0.3]
                        [-0.2 -0.4 0.2]]
               #_[[0.05 0.01 0.0]
@@ -87,7 +88,8 @@
           (spit "/tmp/samples.json" (json/write-str samples))
           (def test-rbm model)))
 
-  (time (let [weights
+  (time (let [weights [[0.5 -0.2 0.3]
+                       [-0.2 -0.4 0.2]]
               v-bias [0.5 0.8 0.3]
               h-bias [0.2 -0.3 0.0]
               rbm (create-theoretical-rbm weights v-bias h-bias)
@@ -102,7 +104,7 @@
 
                                         ;              model (train-cd (create-theoretical-rbm v-count (* 3 h-count)) samples :epochs 30)
               batches (doall (map mat/matrix (partition 1 samples)))
-              model (train-cd (create-jblas-rbm v-count (* 2 h-count)) batches :epochs 1)
+              model (train-cd (create-theoretical-rbm v-count (* 2 h-count)) batches :epochs 1)
               model-samples (mapv #(vec (take v-count %))
                                   (sample-gibbs model 60000))
               model-histo (frequencies model-samples)

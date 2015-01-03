@@ -10,7 +10,7 @@
   (-restricted-weights [this]))
 
 (defprotocol PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k])
+  (-train-cd [this batches epochs learning-rate k prng])
   (-train-pcd [this states]))
 
 (defprotocol PErrorEstimation
@@ -18,8 +18,8 @@
   (-errors [this states labels]))
 
 (defprotocol PSample
-  (-sample-gibbs [this iterations start-state particles])
-  (-sample-ast [this iterations start-state particles]))
+  (-sample-gibbs [this iterations start-state particles prng])
+  (-sample-ast [this iterations start-state particles prng]))
 
 (defprotocol PBackpropagation
   (-forward-prop [this state])
