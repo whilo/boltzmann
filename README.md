@@ -8,8 +8,8 @@ This is a state-of-the-art [reference for deep learning in general in Python](ht
 
 A reconstruction of the provided rbm vs. original digits:
 
-![reconstruction](../blob/master/resources/reconstructions.png)
-![original](../blob/master/resources/original.png)
+![reconstruction](../master/resources/reconstructions.png)
+![original](../master/resources/original.png)
 
 ## Usage
 
