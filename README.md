@@ -13,9 +13,9 @@ A reconstruction of the provided rbm vs. original digits:
 
 ## Usage
 
-Add a depencency to your leiningen project: `[net.polyc0l0r/boltzmann "0.1.0"]`.
+Add a depencency to your leiningen project: `[net.polyc0l0r/boltzmann "0.1.1"]`.
 
-First you have to fetch the [mnist dataset](http://yann.lecun.com/exdb/mnist/) and put it (gunzipped) into `/resources`.
+First you have to fetch the [mnist dataset](http://yann.lecun.com/exdb/mnist/) and put it (gunzipped) into `resources`.
 ~~~clojure
 ;; test the (fast) jblas implementation on mnist
 user> (require '[boltzmann.mnist :as mnist]
@@ -128,6 +128,18 @@ user> (float (classification-rate labels classified))
 
 You can find more examples including bar-charts of the theoretical (naive) implementation in the comments of `core.clj` and `jblas.clj`.
 
+## Changelog
+
+### 0.1.1
+- expose seeds where possible (not yet in incanter(?))
+
+### 0.1
+- initial RBM version
+- CD implementation (slow and fast)
+- mnist loading
+- drawing of receptive fields
+- classification error
+
 ## TODO
 - remove blobs from jar
 - find replacement for incanter's non-seedable sample-normal fn
@@ -144,7 +156,7 @@ You can find more examples including bar-charts of the theoretical (naive) imple
 
 ## License
 
-Copyright © 2014 Christian Weilbach
+Copyright © 2014-2015 Christian Weilbach
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
