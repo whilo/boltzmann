@@ -1,9 +1,10 @@
-(defproject net.polyc0l0r/boltzmann "0.1.1"
+(defproject net.polyc0l0r/boltzmann "0.1.2-SNAPSHOT"
   :description "Boltzmann Machine related deep learning techniques."
   :url "http://github.com/ghubber/boltzmann"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.clojure/core.async "0.1.346.0-17112a-alpha"]
                  ;; for data loading, should go into separate project for data
                  [byte-streams "0.1.13"]
                  [clatrix "0.4.0"]

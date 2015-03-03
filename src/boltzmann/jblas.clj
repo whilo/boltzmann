@@ -6,7 +6,9 @@
             [boltzmann.sample :refer [sample-binary]]
             [clatrix.core :refer [->Matrix]]
             [clojure.core.matrix :refer [add sub mul matrix transpose columns get-row zero-matrix rows] :as mat]
-            [incanter.stats :refer [sample-normal]])
+            [incanter.stats :refer [sample-normal]]
+            [clojure.core.async :as async
+             :refer [<! <!! >! timeout chan alt! go put! go-loop close!]])
   (:import [org.jblas MatrixFunctions DoubleMatrix]
            [clatrix.core Matrix]
            [org.jblas.util Random]))
@@ -97,7 +99,7 @@
    (sub (reduce add h-data-batch)
         (reduce add h-model-batch))])
 
-(defn train-cd-batch [[w vbs hbs] batches rate k seed]
+(defn train-cd-batch [[w vbs hbs] batches rate k seed back-ch]
   (DoubleMatrix/rand seed) ;; WARNING, this is probably global and fails then with multithreading
   (reduce (fn [[w vbs hbs] v-probs-batch]
             (let [v-data-batch (sample-binary-matrix seed v-probs-batch)
@@ -111,10 +113,12 @@
                                     (map (comp mat/matrix vector)
                                          (rows v-probs-batch))
                                     (map (comp mat/matrix vector)
-                                         (rows h-probs-batch)))]
-              (map #(add %1 (mul %2 (/ rate (count v-probs-batch))))
-                   [w vbs hbs]
-                   up)))
+                                         (rows h-probs-batch)))
+                  [w' vbs' hbs'] (map #(add %1 (mul %2 (/ rate (count v-probs-batch))))
+                                      [w vbs hbs]
+                                      up)]
+              (put! back-ch [w' vbs' hbs'])
+              [w' vbs' hbs']))
           [w vbs hbs]
           batches))
 
@@ -131,7 +135,7 @@
   (-restricted-weights [this] restricted-weights)
 
   PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k seed]
+  (-train-cd [this batches epochs learning-rate k seed back-ch]
     (let [[weights v-bias h-bias]
           (reduce (fn [model step]
                     (println "Training epoch" step "rate:" (/ learning-rate step))
@@ -139,7 +143,8 @@
                                     batches
                                     (/ learning-rate step)
                                     k
-                                    seed))
+                                    seed
+                                    back-ch))
                   [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
       (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias
@@ -238,8 +243,12 @@
 
 
   (def trained
-    (let [rbm (create-jblas-rbm 794 100)]
-      (time (-train-cd rbm labeled-batches 4 0.01 1))))
+    (let [rbm (create-jblas-rbm 794 100)
+          back-ch (chan)]
+      (go-loop [up (<! back-ch)]
+        (println "up:" up)
+        (recur (<! back-ch)))
+      (time (-train-cd rbm labeled-batches 1 0.01 1 42 back-ch))))
 
 
   (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))

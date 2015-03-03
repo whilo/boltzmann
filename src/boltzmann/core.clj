@@ -1,6 +1,8 @@
 (ns boltzmann.core
   (:require [boltzmann.protocols :refer :all]
-            [boltzmann.formulas :as f]))
+            [boltzmann.formulas :as f]
+            [clojure.core.async :as async
+             :refer [<! <!! >! timeout chan alt! go put! go-loop close! sliding-buffer]]))
 
 (def state-space f/state-space)
 
@@ -21,9 +23,10 @@
                                           seed 42}}]
   (-sample-gibbs bm iterations start-state particles seed))
 
-(defn train-cd [rbm batches & {:keys [epochs learning-rate k seed]
-                               :or {epochs 1 learning-rate 0.01 k 1 seed 42}}]
-  (-train-cd rbm batches epochs learning-rate k seed))
+(defn train-cd [rbm batches & {:keys [epochs learning-rate k seed back-ch]
+                               :or {epochs 1 learning-rate 0.01 k 1 seed 42
+                                    back-ch (chan (sliding-buffer 1))}}]
+  (-train-cd rbm batches epochs learning-rate k seed back-ch))
 
 
 (comment

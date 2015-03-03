@@ -5,7 +5,9 @@
             [boltzmann.formulas :refer [cond-prob create-seeded-rand]]
             [clojure.core.matrix :refer [exp log add sub mul matrix
                                          transpose columns get-row outer-product] :as mat]
-            [incanter.stats :refer [sample-normal]]))
+            [incanter.stats :refer [sample-normal]]
+            [clojure.core.async :as async
+             :refer [<! <!! >! timeout chan alt! go put! go-loop close!]]))
 
 (mat/set-current-implementation :persistent-vector)
 
@@ -44,7 +46,7 @@
    (sub v-data v-model)
    (sub h-data h-model)])
 
-(defn train-cd-epoch [[weights v-bias h-bias] samples rate k seed]
+(defn train-cd-epoch [[weights v-bias h-bias] samples rate k seed back-ch]
   (let [prng (create-seeded-rand seed)]
     (reduce (fn [[weights v-bias h-bias] v-probs]
               (let [v-data (sample-binary prng v-probs)
@@ -53,10 +55,12 @@
                     chain (cd [weights v-bias h-bias] v-data h-data k prng)
                     up (calc-up (get chain (- (count chain) 2))
                                 (get chain (dec (count chain)))
-                                v-probs h-probs)]
-                (map #(add %1 (mul %2 rate))
-                     [weights v-bias h-bias]
-                     up)))
+                                v-probs h-probs)
+                    [w' vbs' hbs'] (map #(add %1 (mul %2 rate))
+                                        [weights v-bias h-bias]
+                                        up)]
+                (put! back-ch [w' vbs' hbs'])
+                [w' vbs' hbs']))
             [weights v-bias h-bias]
             samples)))
 
@@ -80,14 +84,15 @@
   (-restricted-weights [this] restricted-weights)
 
   PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k seed]
+  (-train-cd [this batches epochs learning-rate k seed back-ch]
     (let [samples (unpack-batches batches)
           [weights v-bias h-bias]
           (reduce (fn [model step]
                     (train-cd-epoch model samples
                                     (/ learning-rate step)
                                     k
-                                    seed))
+                                    seed
+                                    back-ch))
                   [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
       (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias)))

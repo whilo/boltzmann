@@ -63,7 +63,7 @@
 (defn free-entropy [bm]
     (- (log (partition bm))))
 
-(defn kullback-leibler [bm states]
+(defn dkl [bm states]
   (let [q (/ 1 (count states))]
     (reduce (fn [sum x]
               (+ sum (* q (log (/ (prob bm x)

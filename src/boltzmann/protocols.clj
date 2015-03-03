@@ -10,7 +10,7 @@
   (-restricted-weights [this]))
 
 (defprotocol PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k prng])
+  (-train-cd [this batches epochs learning-rate k prng back-ch])
   (-train-pcd [this states]))
 
 (defprotocol PErrorEstimation
