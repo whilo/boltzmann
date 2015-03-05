@@ -41,13 +41,13 @@
   (mapv vec (apply cartesian-product (repeat num [0 1]))))
 
 
-(defn partition
+(defn boltz-partition
   "Partition function for normalization of Boltzmann probability."
   ([weights bias]
-     (partition weights bias (state-space (count bias))))
+     (boltz-partition weights bias (state-space (count bias))))
   ([weights bias states]
      (reduce (fn [sum z]
-               (+ sum (exp (- (energy weights bias z)))))
+               (+ sum (Math/exp (- (energy weights bias z)))))
              0
              states)))
 
@@ -55,18 +55,29 @@
   "Calculates the theoretical probability of the Boltzmann machine
   of state x given states xs."
   [weights bias z]
-  (let [Z (partition weights bias)
+  (let [Z (boltz-partition weights bias)
         E (energy weights bias z)]
     (* (/ 1
-          Z) (exp (- E)))))
+          Z) (Math/exp (- E)))))
+
+
+(defn dkl
+  "Kullback-Leibler divergence between a Boltzmann distribution and an
+  empirical distribution."
+  [weights bias states]
+  (let [v-count (count (first states))
+        q (a/sample-freqs states)
+        p (reduce (fn [f s] (update-in f [(take v-count s)]
+                             (fnil + 0)
+                             (f/prob weights bias s)))
+                     {}
+                     (f/state-space (count bias)))
+        sp (f/state-space v-count)]
+    (reduce (fn [sum x]
+              (+ sum (* (p x) (Math/log (/ (p x)
+                                           (q x))))))
+            0
+            sp)))
 
 (defn free-entropy [bm]
-    (- (log (partition bm))))
-
-(defn dkl [bm states]
-  (let [q (/ 1 (count states))]
-    (reduce (fn [sum x]
-              (+ sum (* q (log (/ (prob bm x)
-                                  q)))))
-            0
-            states)))
+    (- (log (boltz-partition bm))))

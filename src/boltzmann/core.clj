@@ -37,7 +37,7 @@
            '[boltzmann.theoretical :refer [create-theoretical-rbm]]
            '[boltzmann.jblas :refer [create-jblas-rbm]])
 
-  (f/partition (-weights test-rbm) (-biases test-rbm))
+  (f/boltz-partition (-weights test-rbm) (-biases test-rbm))
   (reduce + (map #(boltz-prob test-rbm %) (state-space (count (-biases test-rbm)))))
   (sample-gibbs test-rbm 100)
   (mat/current-implementation)
