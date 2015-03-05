@@ -60,19 +60,24 @@
     (* (/ 1
           Z) (Math/exp (- E)))))
 
+(defn sample-probs [samples]
+  (let [c (count samples)]
+    (->> (frequencies samples)
+         (map (fn [[k v]] [k (float (/ v c))]))
+         (into {}))))
 
 (defn dkl
   "Kullback-Leibler divergence between a Boltzmann distribution and an
   empirical distribution."
   [weights bias states]
   (let [v-count (count (first states))
-        q (a/sample-freqs states)
+        q (sample-probs states)
         p (reduce (fn [f s] (update-in f [(take v-count s)]
                              (fnil + 0)
-                             (f/prob weights bias s)))
+                             (prob weights bias s)))
                      {}
-                     (f/state-space (count bias)))
-        sp (f/state-space v-count)]
+                     (state-space (count bias)))
+        sp (state-space v-count)]
     (reduce (fn [sum x]
               (+ sum (* (p x) (Math/log (/ (p x)
                                            (q x))))))
