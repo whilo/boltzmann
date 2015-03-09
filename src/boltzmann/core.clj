@@ -23,10 +23,12 @@
                                           seed 42}}]
   (-sample-gibbs bm iterations start-state particles seed))
 
-(defn train-cd [rbm batches & {:keys [epochs learning-rate k seed back-ch]
-                               :or {epochs 1 learning-rate 0.01 k 1 seed 42
+(defn train-cd [rbm batches & {:keys [epochs init-learning-rate learning-rate-fn k seed back-ch]
+                               :or {epochs 1 init-learning-rate 0.01
+                                    learing-rate-fn (fn [init-learning-rate step] (/ init-learning-rate step))
+                                    k 1 seed 42
                                     back-ch (chan (sliding-buffer 1))}}]
-  (-train-cd rbm batches epochs learning-rate k seed back-ch))
+  (-train-cd rbm batches epochs (partial learning-rate-fn init-learning-rate) k seed back-ch))
 
 
 (comment

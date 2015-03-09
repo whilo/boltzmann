@@ -135,13 +135,13 @@
   (-restricted-weights [this] restricted-weights)
 
   PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k seed back-ch]
+  (-train-cd [this batches epochs learning-rate-fn k seed back-ch]
     (let [[weights v-bias h-bias]
           (reduce (fn [model step]
-                    (println "Training epoch" step "rate:" (/ learning-rate step))
+                    (println "Training epoch" step "rate:" (learning-rate-fn step))
                     (train-cd-batch model
                                     batches
-                                    (/ learning-rate step)
+                                    (learning-rate-fn step)
                                     k
                                     seed
                                     back-ch))
@@ -149,7 +149,6 @@
                   (range 1 (inc epochs)))]
       (assoc this :restricted-weights weights :v-biases v-bias :h-biases h-bias
              :trained {:epochs epochs
-                       :learning-rate learning-rate
                        :batch-size (count (first batches))
                        :cd-steps k})))
 

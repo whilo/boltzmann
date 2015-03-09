@@ -46,23 +46,22 @@
    (sub v-data v-model)
    (sub h-data h-model)])
 
-(defn train-cd-epoch [[weights v-bias h-bias] samples rate k seed back-ch]
-  (let [prng (create-seeded-rand seed)]
-    (reduce (fn [[weights v-bias h-bias] v-probs]
-              (let [v-data (sample-binary prng v-probs)
-                    h-probs (probs-h-given-v [weights v-bias h-bias] v-data)
-                    h-data (sample-binary prng h-probs)
-                    chain (cd [weights v-bias h-bias] v-data h-data k prng)
-                    up (calc-up (get chain (- (count chain) 2))
-                                (get chain (dec (count chain)))
-                                v-probs h-probs)
-                    [w' vbs' hbs'] (map #(add %1 (mul %2 rate))
-                                        [weights v-bias h-bias]
-                                        up)]
-                (put! back-ch [w' vbs' hbs'])
-                [w' vbs' hbs']))
-            [weights v-bias h-bias]
-            samples)))
+(defn train-cd-epoch [[weights v-bias h-bias] samples rate k prng back-ch]
+  (reduce (fn [[weights v-bias h-bias] v-probs]
+            (let [v-data (sample-binary prng v-probs)
+                  h-probs (probs-h-given-v [weights v-bias h-bias] v-data)
+                  h-data (sample-binary prng h-probs)
+                  chain (cd [weights v-bias h-bias] v-data h-data k prng)
+                  up (calc-up (get chain (- (count chain) 2))
+                              (get chain (dec (count chain)))
+                              v-probs h-probs)
+                  [w' vbs' hbs'] (map #(add %1 (mul %2 rate))
+                                      [weights v-bias h-bias]
+                                      up)]
+              (put! back-ch [w' vbs' hbs'])
+              [w' vbs' hbs']))
+          [weights v-bias h-bias]
+          samples))
 
 (defn- unpack-batches [batches]
   (let [datum (ffirst batches)]
@@ -84,14 +83,15 @@
   (-restricted-weights [this] restricted-weights)
 
   PContrastiveDivergence
-  (-train-cd [this batches epochs learning-rate k seed back-ch]
+  (-train-cd [this batches epochs learning-rate-fn k seed back-ch]
     (let [samples (unpack-batches batches)
+          prng (create-seeded-rand seed)
           [weights v-bias h-bias]
           (reduce (fn [model step]
                     (train-cd-epoch model samples
-                                    (/ learning-rate step)
+                                    (learning-rate-fn step)
                                     k
-                                    seed
+                                    prng
                                     back-ch))
                   [restricted-weights v-biases h-biases]
                   (range 1 (inc epochs)))]
