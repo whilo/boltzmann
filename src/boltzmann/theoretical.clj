@@ -114,8 +114,8 @@
   ([v-count h-count]
      (let [scaled-sd (/ 0.01 (+ v-count h-count))]
        (->TheoreticalRBM
-        (repeatedly h-count
-                    (fn [] (sample-normal v-count :mean 0 :sd scaled-sd)))
+        (vec (repeatedly h-count
+                         (fn [] (vec (sample-normal v-count :mean 0 :sd scaled-sd)))))
         (vec (sample-normal v-count :mean 0 :sd scaled-sd))
         (vec (repeat h-count 0)))))
   ([restricted-weights v-biases h-biases]

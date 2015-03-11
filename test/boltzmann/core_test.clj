@@ -2,8 +2,9 @@
   (:refer-clojure :exclude [partition])
   (:require [clojure.test :refer :all]
             [clojure.core.matrix :refer [matrix] :as mat]
-            #_[boltzmann.theoretical :refer [create-theoretical-rbm]]
-            [boltzmann.formulas :refer [cond-prob]]
+            [boltzmann.theoretical :refer [create-theoretical-rbm]]
+            [boltzmann.formulas :refer [cond-prob boltz-partition]]
+            [boltzmann.matrix :refer [full-matrix]]
             [boltzmann.jblas :refer [cond-prob-batch create-jblas-rbm
                                      probs-hs-given-vs probs-vs-given-hs
                                      outer-product]]))
@@ -39,3 +40,19 @@
             (matrix [(range 1 4)]))
            '((1.0 2.0 3.0)
              (2.0 4.0 6.0))))))
+
+
+
+
+(deftest partition-fn-test
+  (testing "Testing full vs. restricted partition function implementation."
+    (is (let [w (vec (repeat 2 (vec (repeat 4 0))))
+              vb (vec (repeat 4 1))
+              hb (vec (repeat 2 2))
+              trbm (create-theoretical-rbm w vb hb)
+              restr (boltz-partition trbm)
+              full (boltz-partition (full-matrix w) (concat vb hb))]
+          (if (< (- restr full)
+                 1e-3)
+            true
+            [(- restr full) restr full])))))

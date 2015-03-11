@@ -1,7 +1,13 @@
 (ns boltzmann.formulas
   (:require [clojure.core.matrix :refer [add dot mul mget get-row exp log matrix transpose] :as mat]
             [clojure.math.combinatorics :refer [cartesian-product]]
+            [boltzmann.protocols :refer [PRestrictedBoltzmannMachine -weights -biases
+                                         -v-biases -h-biases -restricted-weights]]
             [bigml.sampling.random :as rnd]))
+
+(def sum (partial reduce + 0))
+
+(def prod (partial reduce * 1))
 
 (defn create-seeded-rand [seed]
   (let [prng (rnd/create :seed seed)]
@@ -30,10 +36,12 @@
 
 (defn energy
   "Calculates the energy of a state configuration x in a Boltzmann machine."
-  [weights bias z]
-  (+ (- (/ (dot z (dot z weights))
-           2))
-     (- (dot bias z))))
+  ([bm z]
+   (energy (-weights bm) (-biases bm)))
+  ([weights bias z]
+   (+ (- (/ (dot z (dot z weights))
+            2))
+      (- (dot bias z)))))
 
 (defn state-space
   "Generates binary state space of boltzmann machine for num units."
@@ -43,22 +51,69 @@
 
 (defn boltz-partition
   "Partition function for normalization of Boltzmann probability."
+  ([bm]
+   (if (not (extends? PRestrictedBoltzmannMachine  (type bm)))
+     (boltz-partition (-weights bm) (-biases bm))
+     (let [vb (-v-biases bm)
+           hb (-h-biases bm)
+           w (-restricted-weights bm)
+           vc (count vb)
+           hc (count hb)
+           [sb lb w] (if (> vc hc) [hb vb (transpose w)] [vb hb w])
+           sc (count sb)
+           lc (count lb)
+           _ (when (> sc 20)
+               (throw (ex-info "This state space is intractable to calculate
+                      the partition function exactly."
+                               {:type :partition-fn-intractable
+                                :state-space-size sc
+                                :bm bm})))]
+
+       (time (sum (map (fn [z]
+                         (* (exp (dot z sb))
+                            (prod (map (fn [j]
+                                         (+ 1 (exp (+ (lb j)
+                                                      (sum (map (fn [i] (* (z i) ((w i) j)))
+                                                                (range sc)))))))
+                                       (range lc)))))
+                       (state-space sc)))))))
   ([weights bias]
-     (boltz-partition weights bias (state-space (count bias))))
+   (when (> (count bias) 20)
+     (throw (ex-info "This state space is intractable to calculate
+                      the partition function exactly."
+                     {:type :partition-fn-intractable
+                      :state-space-size (count bias)
+                      :weights weights
+                      :bias bias})))
+   (boltz-partition weights bias (state-space (count bias))))
   ([weights bias states]
-     (reduce (fn [sum z]
-               (+ sum (Math/exp (- (energy weights bias z)))))
-             0
-             states)))
+   (time (reduce (fn [sum z]
+                   (+ sum (Math/exp (- (energy weights bias z)))))
+                 0
+                 states))))
+
+(def boltz-partition-mem (memoize boltz-partition))
+
+(comment
+  (def trbm (create-theoretical-rbm 100 18))
+  (boltz-partition-mem trbm))
+
 
 (defn prob
   "Calculates the theoretical probability of the Boltzmann machine
   of state x given states xs."
-  [weights bias z]
-  (let [Z (boltz-partition weights bias)
-        E (energy weights bias z)]
-    (* (/ 1
-          Z) (Math/exp (- E)))))
+  ([bm z]
+   (let [Z (boltz-partition-mem bm)
+         E (energy bm)]
+     (* (/ 1
+           Z) (Math/exp (- E)))))
+  ([weights bias z]
+   (let [Z (boltz-partition-mem weights bias)
+         E (energy weights bias z)]
+     (* (/ 1
+           Z) (Math/exp (- E))))))
+
+
 
 (defn sample-probs [samples]
   (let [c (count samples)]

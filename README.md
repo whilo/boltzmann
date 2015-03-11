@@ -130,6 +130,10 @@ You can find more examples including bar-charts of the theoretical (naive) imple
 
 ## Changelog
 
+### 0.1.2
+- make learning rate tunable
+- keep history of training to evaluate process
+
 ### 0.1.1
 - expose seeds where possible (not yet in incanter(?))
 
@@ -141,6 +145,7 @@ You can find more examples including bar-charts of the theoretical (naive) imple
 - classification error
 
 ## TODO
+- fix random seed behaviour, so runs become reproducible
 - remove blobs from jar
 - find replacement for incanter's non-seedable sample-normal fn
 - track reconstruction error asynchronously and allow it to control/finish training

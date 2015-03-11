@@ -5,17 +5,8 @@
              :refer [<! <!! >! timeout chan alt! go put! go-loop close! sliding-buffer]]))
 
 (def state-space f/state-space)
-
-(defn energy
-  "Energy of state x in Boltzmann Machine bm."
-  [bm x]
-  (f/energy (-weights bm) (-biases bm)))
-
-(defn prob
-  "Calculates the theoretical probability of the Boltzmann machine of state x.
-  !!! o(exp), intractable for (smaller) layer sizes > 20 !!!"
-  [bm x]
-  (f/prob (-weights bm) (-biases bm) x))
+(def energy f/energy)
+(def prob f/prob)
 
 (defn sample-gibbs [bm iterations & {:keys [start-state particles seed]
                                      :or {start-state (repeat (count (-biases bm)) 0)
@@ -29,7 +20,6 @@
                                     k 1 seed 42
                                     back-ch (chan (sliding-buffer 1))}}]
   (-train-cd rbm batches epochs (partial learning-rate-fn init-learning-rate) k seed back-ch))
-
 
 (comment
   (require '[incanter.core :as i]
