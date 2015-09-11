@@ -1,5 +1,7 @@
 (ns boltzmann.formulas
+  (:refer-clojure :exclude [+ - * /])
   (:require [clojure.core.matrix :refer [add dot mul mget get-row exp log matrix transpose] :as mat]
+            [clojure.core.matrix.operators :refer [+ - * /]]
             [clojure.math.combinatorics :refer [cartesian-product]]
             [boltzmann.protocols :refer [PRestrictedBoltzmannMachine -weights -biases
                                          -v-biases -h-biases -restricted-weights]]
@@ -19,8 +21,8 @@
 
 (defn cond-prob
   "Conditional probability for w(eights) and b(ia)s given state x in unit i."
-  [w bs x i]
-  (σ (+ (dot x (get-row w i)) (mget bs i))))
+  [w bs x]
+  (σ (+ (dot x (transpose w)) bs)))
 
 (defn σ' [x]
   (* (σ x) (σ (- x))))
@@ -79,7 +81,7 @@
                        (state-space sc)))))))
   ([weights bias]
    (when (> (count bias) 20)
-     (throw (ex-info "This state space is intractable to calculate
+     (throw (ex-info "For this state space is intractable to calculate
                       the partition function exactly."
                      {:type :partition-fn-intractable
                       :state-space-size (count bias)

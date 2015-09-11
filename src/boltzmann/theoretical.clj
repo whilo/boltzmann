@@ -104,8 +104,7 @@
           prng (create-seeded-rand seed)]
       (reduce (fn [chain step]
                 (let [last (get chain (dec (count chain)))]
-                  (conj chain (->> (range (count bs))
-                                   (map (partial cond-prob w bs last))
+                  (conj chain (->> (cond-prob w bs last)
                                    (sample-binary prng)))))
               [(vec start-state)]
               (range iterations)))))

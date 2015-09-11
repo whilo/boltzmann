@@ -138,7 +138,6 @@
   (-train-cd [this batches epochs learning-rate-fn k seed back-ch]
     (let [[weights v-bias h-bias]
           (reduce (fn [model step]
-                    (println "Training epoch" step "rate:" (learning-rate-fn step))
                     (train-cd-batch model
                                     batches
                                     (learning-rate-fn step)
@@ -159,10 +158,10 @@
           bs (-biases this)
           prng (create-seeded-rand seed)]
       (reduce (fn [chain step]
-                (let [last (get chain (dec (count chain)))]
-                  (conj chain (->> (range (count bs))
-                                   (map (partial cond-prob w bs last))
-                                   (sample-binary prng)))))
+                (let [last (get chain (dec (count chain)))
+                      new-sample (->> (cond-prob w bs last)
+                                      (sample-binary prng))]
+                  (conj chain new-sample)))
               [(vec start-state)]
               (range iterations)))))
 
@@ -213,10 +212,11 @@
 (comment
   ;; require some more stuff for live coding, should not be in the library
   (require '[boltzmann.mnist :as mnist]
+           '[boltzmann.visualize :as v]
            '[criterium.core :refer [bench]])
 
   (mat/current-implementation)
-                                        ;(mat/set-current-implementation :persistent-vector)
+  (mat/set-current-implementation :clatrix)
 
   (future (def images (mnist/read-images "resources/train-images-idx3-ubyte"))
           (def batches (doall (map matrix (partition 10 images)))))
@@ -239,15 +239,13 @@
 
   (spit "resources/mnist-labeled.edn" (prn-str trained))
 
-
-
   (def trained
     (let [rbm (create-jblas-rbm 794 100)
           back-ch (chan)]
       (go-loop [up (<! back-ch)]
         (println "up:" up)
         (recur (<! back-ch)))
-      (time (-train-cd rbm labeled-batches 1 0.01 1 42 back-ch))))
+      (time (-train-cd rbm labeled-batches 1 (fn [e] 0.01) 1 42 back-ch))))
 
 
   (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
@@ -262,9 +260,9 @@
                                       (:v-biases trained)])))
        (map (partial drop 10))
        (map #(partition 28 %))
-       (mnist/tile 10)
-       mnist/render-grayscale-float-matrix
-       mnist/view)
+       (v/tile 10)
+       v/render-grayscale-float-matrix
+       v/view)
 
   (def classified
     (->> test-images
@@ -280,7 +278,4 @@
 
 
 
-  (float (classification-rate labels classified))
-
-
-  )
+  (float (classification-rate labels classified)))

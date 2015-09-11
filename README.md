@@ -13,12 +13,14 @@ A reconstruction of the provided rbm vs. original digits:
 
 ## Usage
 
-Add a depencency to your leiningen project: `[net.polyc0l0r/boltzmann "0.1.1"]`.
+Add a depencency to your leiningen project:
+[![Clojars Project](http://clojars.org/es.topiq/boltzmann/latest-version.svg)](http://clojars.org/es.topiq/boltzmann)
 
 First you have to fetch the [mnist dataset](http://yann.lecun.com/exdb/mnist/) and put it (gunzipped) into `resources`.
 ~~~clojure
 ;; test the (fast) jblas implementation on mnist
 user> (require '[boltzmann.mnist :as mnist]
+           '[boltzmann.visualize :as v]
            '[boltzmann.core :refer :all]
            '[boltzmann.jblas :refer :all]
            '[clojure.core.matrix :refer [matrix] :as mat])
@@ -44,12 +46,7 @@ user> (def labeled-batches
 ;; train with 100 hidden units
 user> (def trained
     (let [rbm (create-jblas-rbm 794 100)]
-      (time (train-cd rbm labeled-batches :epochs 4 :learning-rate 0.01 :k 1))))
-Training epoch 1 rate: 0.01
-Training epoch 2 rate: 0.005
-Training epoch 3 rate: 0.0033333333333333335
-Training epoch 4 rate: 0.0025
-"Elapsed time: 365486.867282 msecs"
+      (time (train-cd rbm labeled-batches :epochs 4 :init-learning-rate 0.01 :k 1))))
 #'user/trained
 ;; build test-images with zeroed labels
 user> (def test-images (map (comp float-array concat) (repeat (repeat 10 0)) images))
@@ -65,9 +62,9 @@ user> (->> test-images
                                       (:v-biases trained)])))
        (map (partial drop 10))
        (map #(partition 28 %))
-       (mnist/tile 10)
-       mnist/render-grayscale-float-matrix
-       mnist/view)
+       (v/tile 10)
+       v/render-grayscale-float-matrix
+       v/view)
 #<JFrame javax.swing.JFrame[frame0,10,62,280x280,layout=java.awt.BorderLayout,title=MNIST Digit,normal,defaultCloseOperation=HIDE_ON_CLOSE,rootPane=javax.swing.JRootPane[,0,0,280x280,layout=javax.swing.JRootPane$RootLayout,alignmentX=0.0,alignmentY=0.0,border=,flags=16777673,maximumSize=,minimumSize=,preferredSize=],rootPaneCheckingEnabled=true]>
 ;; classifier the first 10% of training data
 user> (def classified
@@ -104,9 +101,9 @@ user> (->> test-images
                                       (:v-biases trained)])))
        (map (partial drop 10))
        (map #(partition 28 %))
-       (mnist/tile 10)
-       mnist/render-grayscale-float-matrix
-       mnist/view)
+       (v/tile 10)
+       v/render-grayscale-float-matrix
+       v/view)
 #<JFrame javax.swing.JFrame[frame2,0,24,280x280,layout=java.awt.BorderLayout,title=MNIST Digit,normal,defaultCloseOperation=HIDE_ON_CLOSE,rootPane=javax.swing.JRootPane[,0,0,280x280,layout=javax.swing.JRootPane$RootLayout,alignmentX=0.0,alignmentY=0.0,border=,flags=16777673,maximumSize=,minimumSize=,preferredSize=],rootPaneCheckingEnabled=true]>
 ;; reclassify
 user> (def classified
@@ -132,7 +129,9 @@ You can find more examples including bar-charts of the theoretical (naive) imple
 
 ### 0.1.2
 - make learning rate tunable
-- keep history of training to evaluate process
+- keep async history of training to evaluate process
+- improve gibbs sampling
+- bump deps
 
 ### 0.1.1
 - expose seeds where possible (not yet in incanter(?))
@@ -145,6 +144,7 @@ You can find more examples including bar-charts of the theoretical (naive) imple
 - classification error
 
 ## TODO
+- have a look at https://github.com/jcsims/deebn and synaptic and merge
 - fix random seed behaviour, so runs become reproducible
 - remove blobs from jar
 - find replacement for incanter's non-seedable sample-normal fn
