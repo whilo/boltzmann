@@ -16,7 +16,7 @@
 
 (defn train-cd [rbm batches & {:keys [epochs init-learning-rate learning-rate-fn k seed back-ch]
                                :or {epochs 1 init-learning-rate 0.01
-                                    learing-rate-fn (fn [init-learning-rate step] (/ init-learning-rate step))
+                                    learning-rate-fn (fn [init-learning-rate step] (/ init-learning-rate step))
                                     k 1 seed 42
                                     back-ch (chan (sliding-buffer 1))}}]
   (-train-cd rbm batches epochs (partial learning-rate-fn init-learning-rate) k seed back-ch))
