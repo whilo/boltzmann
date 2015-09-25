@@ -15,8 +15,9 @@
        (map horizontal-tile)
        (apply concat)))
 
-(defn view [image]
-  (doto (javax.swing.JFrame. "MNIST Digit")
+(defn view [image & {:keys [title]
+                     :or {title "MNIST Digits"}}]
+  (doto (javax.swing.JFrame. title)
     (.add (proxy [javax.swing.JPanel] []
             (paintComponent [g]
               (proxy-super paintComponent g)
