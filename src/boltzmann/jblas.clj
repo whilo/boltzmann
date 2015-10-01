@@ -52,7 +52,7 @@
 
 (defn sample-binary-matrix
   "Warning: Seed is currently set globally for jblas with
-  Random/rand. m is the matrix to sample from."
+  Random/seed. m is the matrix to sample from."
   [seed m]
   (let [[x y] (mat/shape m)]
     (->Matrix (.ge (.-me m) (DoubleMatrix/rand x y))
@@ -100,7 +100,7 @@
         (reduce add h-model-batch))])
 
 (defn train-cd-batch [[w vbs hbs] batches rate k seed back-ch]
-  (DoubleMatrix/rand seed) ;; WARNING, this is probably global and fails then with multithreading
+  (Random/seed seed) ;; WARNING, this is probably global and fails then with multithreading
   (reduce (fn [[w vbs hbs] v-probs-batch]
             (let [v-data-batch (sample-binary-matrix seed v-probs-batch)
                   h-probs-batch (probs-hs-given-vs [w hbs] v-data-batch)
